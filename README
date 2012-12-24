@@ -1,8 +1,4 @@
-Project 1: The CS61B Drawing System.
-
-The files in this directory form a very sketchy skeleton that you are
-to flesh out into a full system.
-
+Implementation of Blokus, the board game.
 
 Files:
 
@@ -29,16 +25,16 @@ duo (subdirectory):  The package containing the game program.
                central index of all of them, and has a few useful methods 
                for use in some tests.
 
-    Board.java, MutableBoard.java, Color.java, Player.java, 
-    Human.java, AI.java:
-               SAMPLE source files, hinting at part of ONE POSSIBLE
-               implementation (object analysis) of the system.
+    Board.java, MutableBoard.java, Color.java:
+	       Manipulations of various pieces on the playing board.
 
-    UI.java
-               An interface representing a user interface.  By going through
-	       an interface, we make it easier (in later assignments) to
-	       convert from text I/O to graphical I/O.
-    TextUI.java
+    Player.java, Human.java, AI.java:
+	       Implementations of various players of the game.
+
+    UI.java:
+               An interface representing a user interface.
+
+    TextUI.java:
                An implementation of UI.java intended that uses the terminal
 	       for input and output.
 
