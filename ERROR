@@ -1,0 +1,15 @@
+When I do:
+
+gmake check
+
+it says 
+
+game1: FAIL (input ends prematurely)
+
+and when I do
+
+java duo.Main player1 player2 5 game1.moves
+
+it does everything it is supposed to do.
+
+Why is this, and how do I fix it?

@@ -1,0 +1,17 @@
+My Board is a Color[][], and I store pieces and orientation values
+in a Hashtable as Point[]. To manipulate the pieces (ie rotate, 
+translate, and flip them), I take these values out of the Hashtable
+and manipulate the x and y values of each point. For game purposes, 
+I also keep an ArrayList<String> of what moves I have left for each
+color (so I can calculate whether the board has any moves left).
+
+In terms of game execution, Main.java calls Game.java's play method,
+which then calls Player.java's move method.  If Player is a Human, 
+Player.java calls TextUI.java's getMove method, which then waits for
+input and executes from there. If Player is an AI, the first 3 (if
+the AI is first) or 2 (if the AI is second) moves are programmed in,
+then it looks one move ahead (meaning "if I put this piece down,
+what is my opponent's best move") decides what move to make from 
+there. My heuristic for calculating how much value a move is is: 
+the number of free corners the move in question has plus the
+number of spaces on the box the move takes.   

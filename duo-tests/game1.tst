@@ -1,0 +1,32 @@
+# A complete game between two human players (Orange should win).
+stdin stdin - 1
+-----
+T001
+N0c7
+3301
+F494
+d413
+z7b1
+F633
+W790
+V563
+P280
+v950
+da87
+N133
+Y361
+za21
+1970
+t041
+tb51
+Pb05
+vac0
+2260
+2941
+Yc34
+Tb20
+s800
+Ucb2
+U080
+3251
+1380

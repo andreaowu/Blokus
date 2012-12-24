@@ -1,0 +1,1033 @@
+#!/usr/bin/env python
+# -*-Python-*-
+
+# Author: P. N. Hilfinger
+
+# For usage, see Usage procedure (or invoke the command without arguments).
+# Feel free to adapt this script to your needs.
+
+import sys, os, re
+import threading
+from subprocess import Popen, PIPE
+import signal
+from Queue import Queue, Empty
+import random
+import time
+from getopt import getopt
+from tempfile import mkstemp
+   		      
+def Dbg(msg):
+    print >>sys.stderr, msg
+    sys.stderr.flush()
+
+PIECES = {
+    'W0': ( (0,0), (1,0), (1,1), (2,1), (2,2), ),
+    'W1': ( (1,0), (2,0), (0,1), (1,1), (0,2), ),
+    'W2': ( (0,0), (0,1), (1,1), (1,2), (2,2), ),
+    'W3': ( (2,0), (1,1), (2,1), (0,2), (1,2), ),
+    'W4': ( (1,0), (2,0), (0,1), (1,1), (0,2), ),
+    'W5': ( (0,0), (1,0), (1,1), (2,1), (2,2), ),
+    'W6': ( (2,0), (1,1), (2,1), (0,2), (1,2), ),
+    'W7': ( (0,0), (0,1), (1,1), (1,2), (2,2), ),
+    'Z0': ( (1,0), (2,0), (1,1), (0,2), (1,2), ),
+    'Z1': ( (0,0), (0,1), (1,1), (2,1), (2,2), ),
+    'Z2': ( (1,0), (2,0), (1,1), (0,2), (1,2), ),
+    'Z3': ( (0,0), (0,1), (1,1), (2,1), (2,2), ),
+    'Z4': ( (0,0), (1,0), (1,1), (1,2), (2,2), ),
+    'Z5': ( (2,0), (0,1), (1,1), (2,1), (0,2), ),
+    'Z6': ( (0,0), (1,0), (1,1), (1,2), (2,2), ),
+    'Z7': ( (2,0), (0,1), (1,1), (2,1), (0,2), ),
+    'I0': ( (0,0), (0,1), (0,2), (0,3), (0,4), ),
+    'I1': ( (0,0), (1,0), (2,0), (3,0), (4,0), ),
+    'I2': ( (0,0), (0,1), (0,2), (0,3), (0,4), ),
+    'I3': ( (0,0), (1,0), (2,0), (3,0), (4,0), ),
+    'I4': ( (0,0), (0,1), (0,2), (0,3), (0,4), ),
+    'I5': ( (0,0), (1,0), (2,0), (3,0), (4,0), ),
+    'I6': ( (0,0), (0,1), (0,2), (0,3), (0,4), ),
+    'I7': ( (0,0), (1,0), (2,0), (3,0), (4,0), ),
+    'L0': ( (0,0), (1,0), (0,1), (0,2), (0,3), ),
+    'L1': ( (0,0), (0,1), (1,1), (2,1), (3,1), ),
+    'L2': ( (1,0), (1,1), (1,2), (0,3), (1,3), ),
+    'L3': ( (0,0), (1,0), (2,0), (3,0), (3,1), ),
+    'L4': ( (0,0), (1,0), (1,1), (1,2), (1,3), ),
+    'L5': ( (3,0), (0,1), (1,1), (2,1), (3,1), ),
+    'L6': ( (0,0), (0,1), (0,2), (0,3), (1,3), ),
+    'L7': ( (0,0), (1,0), (2,0), (3,0), (0,1), ),
+    'U0': ( (0,0), (1,0), (0,1), (0,2), (1,2), ),
+    'U1': ( (0,0), (2,0), (0,1), (1,1), (2,1), ),
+    'U2': ( (0,0), (1,0), (1,1), (0,2), (1,2), ),
+    'U3': ( (0,0), (1,0), (2,0), (0,1), (2,1), ),
+    'U4': ( (0,0), (1,0), (1,1), (0,2), (1,2), ),
+    'U5': ( (0,0), (2,0), (0,1), (1,1), (2,1), ),
+    'U6': ( (0,0), (1,0), (0,1), (0,2), (1,2), ),
+    'U7': ( (0,0), (1,0), (2,0), (0,1), (2,1), ),
+    'T0': ( (0,0), (1,0), (2,0), (1,1), (1,2), ),
+    'T1': ( (0,0), (0,1), (1,1), (2,1), (0,2), ),
+    'T2': ( (1,0), (1,1), (0,2), (1,2), (2,2), ),
+    'T3': ( (2,0), (0,1), (1,1), (2,1), (2,2), ),
+    'T4': ( (0,0), (1,0), (2,0), (1,1), (1,2), ),
+    'T5': ( (2,0), (0,1), (1,1), (2,1), (2,2), ),
+    'T6': ( (1,0), (1,1), (0,2), (1,2), (2,2), ),
+    'T7': ( (0,0), (0,1), (1,1), (2,1), (0,2), ),
+    'X0': ( (1,0), (0,1), (1,1), (2,1), (1,2), ),
+    'X1': ( (1,0), (0,1), (1,1), (2,1), (1,2), ),
+    'X2': ( (1,0), (0,1), (1,1), (2,1), (1,2), ),
+    'X3': ( (1,0), (0,1), (1,1), (2,1), (1,2), ),
+    'X4': ( (1,0), (0,1), (1,1), (2,1), (1,2), ),
+    'X5': ( (1,0), (0,1), (1,1), (2,1), (1,2), ),
+    'X6': ( (1,0), (0,1), (1,1), (2,1), (1,2), ),
+    'X7': ( (1,0), (0,1), (1,1), (2,1), (1,2), ),
+    'V0': ( (0,0), (1,0), (2,0), (2,1), (2,2), ),
+    'V1': ( (0,0), (1,0), (2,0), (0,1), (0,2), ),
+    'V2': ( (0,0), (0,1), (0,2), (1,2), (2,2), ),
+    'V3': ( (2,0), (2,1), (0,2), (1,2), (2,2), ),
+    'V4': ( (0,0), (1,0), (2,0), (0,1), (0,2), ),
+    'V5': ( (0,0), (1,0), (2,0), (2,1), (2,2), ),
+    'V6': ( (2,0), (2,1), (0,2), (1,2), (2,2), ),
+    'V7': ( (0,0), (0,1), (0,2), (1,2), (2,2), ),
+    'F0': ( (1,0), (0,1), (1,1), (1,2), (2,2), ),
+    'F1': ( (2,0), (0,1), (1,1), (2,1), (1,2), ),
+    'F2': ( (0,0), (1,0), (1,1), (2,1), (1,2), ),
+    'F3': ( (1,0), (0,1), (1,1), (2,1), (0,2), ),
+    'F4': ( (1,0), (1,1), (2,1), (0,2), (1,2), ),
+    'F5': ( (0,0), (0,1), (1,1), (2,1), (1,2), ),
+    'F6': ( (1,0), (2,0), (0,1), (1,1), (1,2), ),
+    'F7': ( (1,0), (0,1), (1,1), (2,1), (2,2), ),
+    'P0': ( (0,0), (0,1), (1,1), (0,2), (1,2), ),
+    'P1': ( (1,0), (2,0), (0,1), (1,1), (2,1), ),
+    'P2': ( (0,0), (1,0), (0,1), (1,1), (1,2), ),
+    'P3': ( (0,0), (1,0), (2,0), (0,1), (1,1), ),
+    'P4': ( (1,0), (0,1), (1,1), (0,2), (1,2), ),
+    'P5': ( (0,0), (1,0), (0,1), (1,1), (2,1), ),
+    'P6': ( (0,0), (1,0), (0,1), (1,1), (0,2), ),
+    'P7': ( (0,0), (1,0), (2,0), (1,1), (2,1), ),
+    'Y0': ( (0,0), (0,1), (0,2), (1,2), (0,3), ),
+    'Y1': ( (2,0), (0,1), (1,1), (2,1), (3,1), ),
+    'Y2': ( (1,0), (0,1), (1,1), (1,2), (1,3), ),
+    'Y3': ( (0,0), (1,0), (2,0), (3,0), (1,1), ),
+    'Y4': ( (1,0), (1,1), (0,2), (1,2), (1,3), ),
+    'Y5': ( (1,0), (0,1), (1,1), (2,1), (3,1), ),
+    'Y6': ( (0,0), (0,1), (1,1), (0,2), (0,3), ),
+    'Y7': ( (0,0), (1,0), (2,0), (3,0), (2,1), ),
+    'N0': ( (1,0), (0,1), (1,1), (0,2), (0,3), ),
+    'N1': ( (0,0), (1,0), (1,1), (2,1), (3,1), ),
+    'N2': ( (1,0), (1,1), (0,2), (1,2), (0,3), ),
+    'N3': ( (0,0), (1,0), (2,0), (2,1), (3,1), ),
+    'N4': ( (0,0), (0,1), (1,1), (1,2), (1,3), ),
+    'N5': ( (2,0), (3,0), (0,1), (1,1), (2,1), ),
+    'N6': ( (0,0), (0,1), (0,2), (1,2), (1,3), ),
+    'N7': ( (1,0), (2,0), (3,0), (0,1), (1,1), ),
+    'i0': ( (0,0), (0,1), (0,2), (0,3), ),
+    'i1': ( (0,0), (1,0), (2,0), (3,0), ),
+    'i2': ( (0,0), (0,1), (0,2), (0,3), ),
+    'i3': ( (0,0), (1,0), (2,0), (3,0), ),
+    'i4': ( (0,0), (0,1), (0,2), (0,3), ),
+    'i5': ( (0,0), (1,0), (2,0), (3,0), ),
+    'i6': ( (0,0), (0,1), (0,2), (0,3), ),
+    'i7': ( (0,0), (1,0), (2,0), (3,0), ),
+    't0': ( (0,0), (1,0), (2,0), (1,1), ),
+    't1': ( (0,0), (0,1), (1,1), (0,2), ),
+    't2': ( (1,0), (0,1), (1,1), (2,1), ),
+    't3': ( (1,0), (0,1), (1,1), (1,2), ),
+    't4': ( (0,0), (1,0), (2,0), (1,1), ),
+    't5': ( (1,0), (0,1), (1,1), (1,2), ),
+    't6': ( (1,0), (0,1), (1,1), (2,1), ),
+    't7': ( (0,0), (0,1), (1,1), (0,2), ),
+    'd0': ( (0,0), (1,0), (1,1), (1,2), ),
+    'd1': ( (0,0), (1,0), (2,0), (0,1), ),
+    'd2': ( (0,0), (0,1), (0,2), (1,2), ),
+    'd3': ( (2,0), (0,1), (1,1), (2,1), ),
+    'd4': ( (0,0), (1,0), (0,1), (0,2), ),
+    'd5': ( (0,0), (1,0), (2,0), (2,1), ),
+    'd6': ( (1,0), (1,1), (0,2), (1,2), ),
+    'd7': ( (0,0), (0,1), (1,1), (2,1), ),
+    'z0': ( (1,0), (2,0), (0,1), (1,1), ),
+    'z1': ( (0,0), (0,1), (1,1), (1,2), ),
+    'z2': ( (1,0), (2,0), (0,1), (1,1), ),
+    'z3': ( (0,0), (0,1), (1,1), (1,2), ),
+    'z4': ( (0,0), (1,0), (1,1), (2,1), ),
+    'z5': ( (1,0), (0,1), (1,1), (0,2), ),
+    'z6': ( (0,0), (1,0), (1,1), (2,1), ),
+    'z7': ( (1,0), (0,1), (1,1), (0,2), ),
+    's0': ( (0,0), (1,0), (0,1), (1,1), ),
+    's1': ( (0,0), (1,0), (0,1), (1,1), ),
+    's2': ( (0,0), (1,0), (0,1), (1,1), ),
+    's3': ( (0,0), (1,0), (0,1), (1,1), ),
+    's4': ( (0,0), (1,0), (0,1), (1,1), ),
+    's5': ( (0,0), (1,0), (0,1), (1,1), ),
+    's6': ( (0,0), (1,0), (0,1), (1,1), ),
+    's7': ( (0,0), (1,0), (0,1), (1,1), ),
+    '30': ( (0,0), (0,1), (0,2), ),
+    '31': ( (0,0), (1,0), (2,0), ),
+    '32': ( (0,0), (0,1), (0,2), ),
+    '33': ( (0,0), (1,0), (2,0), ),
+    '34': ( (0,0), (0,1), (0,2), ),
+    '35': ( (0,0), (1,0), (2,0), ),
+    '36': ( (0,0), (0,1), (0,2), ),
+    '37': ( (0,0), (1,0), (2,0), ),
+    'v0': ( (0,0), (1,0), (0,1), ),
+    'v1': ( (0,0), (0,1), (1,1), ),
+    'v2': ( (1,0), (0,1), (1,1), ),
+    'v3': ( (0,0), (1,0), (1,1), ),
+    'v4': ( (0,0), (1,0), (1,1), ),
+    'v5': ( (1,0), (0,1), (1,1), ),
+    'v6': ( (0,0), (0,1), (1,1), ),
+    'v7': ( (0,0), (1,0), (0,1), ),
+    '20': ( (0,0), (0,1), ),
+    '21': ( (0,0), (1,0), ),
+    '22': ( (0,0), (0,1), ),
+    '23': ( (0,0), (1,0), ),
+    '24': ( (0,0), (0,1), ),
+    '25': ( (0,0), (1,0), ),
+    '26': ( (0,0), (0,1), ),
+    '27': ( (0,0), (1,0), ),
+    '10': ( (0,0), ),
+    '11': ( (0,0), ),
+    '12': ( (0,0), ),
+    '13': ( (0,0), ),
+    '14': ( (0,0), ),
+    '15': ( (0,0), ),
+    '16': ( (0,0), ),
+    '17': ( (0,0), ), }
+
+CANONICAL_PIECES = {
+    'W0': [ (0,0), (1,0), (1,1), (2,1), (2,2), ],
+    'W1': [ (1,0), (2,0), (0,1), (1,1), (0,2), ],
+    'W2': [ (0,0), (0,1), (1,1), (1,2), (2,2), ],
+    'W3': [ (2,0), (1,1), (2,1), (0,2), (1,2), ],
+    'Z0': [ (1,0), (2,0), (1,1), (0,2), (1,2), ],
+    'Z1': [ (0,0), (0,1), (1,1), (2,1), (2,2), ],
+    'Z4': [ (0,0), (1,0), (1,1), (1,2), (2,2), ],
+    'Z5': [ (2,0), (0,1), (1,1), (2,1), (0,2), ],
+    'I0': [ (0,0), (0,1), (0,2), (0,3), (0,4), ],
+    'I1': [ (0,0), (1,0), (2,0), (3,0), (4,0), ],
+    'L0': [ (0,0), (1,0), (0,1), (0,2), (0,3), ],
+    'L1': [ (0,0), (0,1), (1,1), (2,1), (3,1), ],
+    'L2': [ (1,0), (1,1), (1,2), (0,3), (1,3), ],
+    'L3': [ (0,0), (1,0), (2,0), (3,0), (3,1), ],
+    'L4': [ (0,0), (1,0), (1,1), (1,2), (1,3), ],
+    'L5': [ (3,0), (0,1), (1,1), (2,1), (3,1), ],
+    'L6': [ (0,0), (0,1), (0,2), (0,3), (1,3), ],
+    'L7': [ (0,0), (1,0), (2,0), (3,0), (0,1), ],
+    'U0': [ (0,0), (1,0), (0,1), (0,2), (1,2), ],
+    'U1': [ (0,0), (2,0), (0,1), (1,1), (2,1), ],
+    'U2': [ (0,0), (1,0), (1,1), (0,2), (1,2), ],
+    'U3': [ (0,0), (1,0), (2,0), (0,1), (2,1), ],
+    'T0': [ (0,0), (1,0), (2,0), (1,1), (1,2), ],
+    'T1': [ (0,0), (0,1), (1,1), (2,1), (0,2), ],
+    'T2': [ (1,0), (1,1), (0,2), (1,2), (2,2), ],
+    'T3': [ (2,0), (0,1), (1,1), (2,1), (2,2), ],
+    'X0': [ (1,0), (0,1), (1,1), (2,1), (1,2), ],
+    'V0': [ (0,0), (1,0), (2,0), (2,1), (2,2), ],
+    'V1': [ (0,0), (1,0), (2,0), (0,1), (0,2), ],
+    'V2': [ (0,0), (0,1), (0,2), (1,2), (2,2), ],
+    'V3': [ (2,0), (2,1), (0,2), (1,2), (2,2), ],
+    'F0': [ (1,0), (0,1), (1,1), (1,2), (2,2), ],
+    'F1': [ (2,0), (0,1), (1,1), (2,1), (1,2), ],
+    'F2': [ (0,0), (1,0), (1,1), (2,1), (1,2), ],
+    'F3': [ (1,0), (0,1), (1,1), (2,1), (0,2), ],
+    'F4': [ (1,0), (1,1), (2,1), (0,2), (1,2), ],
+    'F5': [ (0,0), (0,1), (1,1), (2,1), (1,2), ],
+    'F6': [ (1,0), (2,0), (0,1), (1,1), (1,2), ],
+    'F7': [ (1,0), (0,1), (1,1), (2,1), (2,2), ],
+    'P0': [ (0,0), (0,1), (1,1), (0,2), (1,2), ],
+    'P1': [ (1,0), (2,0), (0,1), (1,1), (2,1), ],
+    'P2': [ (0,0), (1,0), (0,1), (1,1), (1,2), ],
+    'P3': [ (0,0), (1,0), (2,0), (0,1), (1,1), ],
+    'P4': [ (1,0), (0,1), (1,1), (0,2), (1,2), ],
+    'P5': [ (0,0), (1,0), (0,1), (1,1), (2,1), ],
+    'P6': [ (0,0), (1,0), (0,1), (1,1), (0,2), ],
+    'P7': [ (0,0), (1,0), (2,0), (1,1), (2,1), ],
+    'Y0': [ (0,0), (0,1), (0,2), (1,2), (0,3), ],
+    'Y1': [ (2,0), (0,1), (1,1), (2,1), (3,1), ],
+    'Y2': [ (1,0), (0,1), (1,1), (1,2), (1,3), ],
+    'Y3': [ (0,0), (1,0), (2,0), (3,0), (1,1), ],
+    'Y4': [ (1,0), (1,1), (0,2), (1,2), (1,3), ],
+    'Y5': [ (1,0), (0,1), (1,1), (2,1), (3,1), ],
+    'Y6': [ (0,0), (0,1), (1,1), (0,2), (0,3), ],
+    'Y7': [ (0,0), (1,0), (2,0), (3,0), (2,1), ],
+    'N0': [ (1,0), (0,1), (1,1), (0,2), (0,3), ],
+    'N1': [ (0,0), (1,0), (1,1), (2,1), (3,1), ],
+    'N2': [ (1,0), (1,1), (0,2), (1,2), (0,3), ],
+    'N3': [ (0,0), (1,0), (2,0), (2,1), (3,1), ],
+    'N4': [ (0,0), (0,1), (1,1), (1,2), (1,3), ],
+    'N5': [ (2,0), (3,0), (0,1), (1,1), (2,1), ],
+    'N6': [ (0,0), (0,1), (0,2), (1,2), (1,3), ],
+    'N7': [ (1,0), (2,0), (3,0), (0,1), (1,1), ],
+    'i0': [ (0,0), (0,1), (0,2), (0,3), ],
+    'i1': [ (0,0), (1,0), (2,0), (3,0), ],
+    't0': [ (0,0), (1,0), (2,0), (1,1), ],
+    't1': [ (0,0), (0,1), (1,1), (0,2), ],
+    't2': [ (1,0), (0,1), (1,1), (2,1), ],
+    't3': [ (1,0), (0,1), (1,1), (1,2), ],
+    'd0': [ (0,0), (1,0), (1,1), (1,2), ],
+    'd1': [ (0,0), (1,0), (2,0), (0,1), ],
+    'd2': [ (0,0), (0,1), (0,2), (1,2), ],
+    'd3': [ (2,0), (0,1), (1,1), (2,1), ],
+    'd4': [ (0,0), (1,0), (0,1), (0,2), ],
+    'd5': [ (0,0), (1,0), (2,0), (2,1), ],
+    'd6': [ (1,0), (1,1), (0,2), (1,2), ],
+    'd7': [ (0,0), (0,1), (1,1), (2,1), ],
+    'z0': [ (1,0), (2,0), (0,1), (1,1), ],
+    'z1': [ (0,0), (0,1), (1,1), (1,2), ],
+    'z4': [ (0,0), (1,0), (1,1), (2,1), ],
+    'z5': [ (1,0), (0,1), (1,1), (0,2), ],
+    's0': [ (0,0), (1,0), (0,1), (1,1), ],
+    '30': [ (0,0), (0,1), (0,2), ],
+    '31': [ (0,0), (1,0), (2,0), ],
+    'v0': [ (0,0), (1,0), (0,1), ],
+    'v1': [ (0,0), (0,1), (1,1), ],
+    'v2': [ (1,0), (0,1), (1,1), ],
+    'v3': [ (0,0), (1,0), (1,1), ],
+    '20': [ (0,0), (0,1), ],
+    '21': [ (0,0), (1,0), ],
+    '10': [ (0,0), ], }
+
+MOVE_PATN_STR = r'(\b[WZILUTXVFPYNitdzs3v21][0-9a-d][0-9a-d][0-7]\b)'
+
+INPUT_PATN = re.compile(r'(' + MOVE_PATN_STR +
+                        r'|(Orange wins|Violet wins|Tie game) \((\d+)-(\d+)\)'
+                        r'|(===))$')
+MOVE_PATN = re.compile(MOVE_PATN_STR)
+
+DEFAULT_TIMEOUT = 0.2
+DEFAULT_WINNER_TIMEOUT = 15
+DEFAULT_BOARD_TIMEOUT = 15
+DEFAULT_MOVE_TIMEOUT = 5
+
+def Usage():
+    print >>sys.stderr, """\
+Usage: test-duo OPTIONS [ FILE ... ]
+       test-duo --referee OPTIONS PROG1 PROG2
+       test-duo --play OPTIONS NAME1 NAME2
+
+ Form 1: Each FILE should contain specifications for one run of duo,
+   as follows:
+     * The file has the form
+            SRC1 SRC2 TEST_SEED CHECK_SEED
+            INITIAL_MOVES
+            -----
+            STANDARD_INPUT
+      * SRC1 and SRC2 indicate the players (orange and violet).  Each has one
+        of the following forms:
+           ai
+               which indicates the tested program's AI.
+           stdin
+               which indicates moves taken from STANDARD_INPUT (moves can
+               include 'quit' and 'board' commands).
+           rand
+               which indicates random legal moves generated by the test script
+      * TEST_SEED species the seed argument passed to the tested program:
+        either "-" for no seed, or an integer.
+      * CHECK_SEED is a seed argument for random move generation by the test
+        script; it must be an integer.
+      * INITIAL_MOVES is a sequence of 0 or more moves that are entered as
+        the fourth argument to the 'java duo.Main' command.
+
+ Form 2: referee a game between the AIs of players indicated by
+         PROG1 and PROG2.  By default, PROG1 and PROG2 are directories or
+         .jar files that contain the duo.Main programs and the competing
+         programs are 'java -cp PROGi:$CLASSPATH duo.Main', i = 1, 2.
+
+ Form 3: Act like a Duo player.  One of NAME1 and NAME2 must start with
+         "@" to indicate an AI player.  The program will read moves
+         for the non-AI player and provide random legal moves for the AI
+         player.
+
+ OPTIONS:
+
+   --command=COMMAND gives the prefix of the command to run (all but the
+        command-line parameters specified in the project 2 spec).  Default is
+        'java -ea duo.Main'
+    
+   --movetime=SEC is the maximum time for an AI move (default 5 seconds).
+
+  Options that apply only to the second form:
+   --command1=COMMAND, --command2=COMMAND
+        as for --command, but specifies the commands for player1 and player2,
+        respectively.  An occurrence of %s stands for PROG1 or PROG2 from the
+        command line.
+
+   --init-moves=FILE
+        Gives the name of a file containing an initial move sequence (used
+        by both players).
+
+   --seed=NUMBER, --seed1=NUMBER, --seed2=NUMBER
+        Provide the SEED arguments for the players, or separately for PLAYER1
+        and PLAYER2."""
+    sys.exit(1)
+        
+def Match(patn, text):
+    global _match
+    _match = re.match(patn, text)
+    return _match
+
+def Group(i):
+    return _match.group(i)
+
+def Open(name):
+    try:
+        return open(name)
+    except:
+        return None
+
+def output_queuer(out_stream):
+    """Return a Queue that gathers the lines of output from OUT_STREAM, followed
+by an empty string."""
+    def transfer():
+        while True:
+            line = out_stream.readline()
+            queue.put(line)
+            if line == "":
+                return
+    queue = Queue(2048)
+    task = threading.Thread(target=transfer)
+    task.start()
+    return queue
+
+class Move_Error(Exception):
+    pass
+
+class Spec_Error(Exception):
+    pass
+
+class Player(object):
+    def __init__(self, command, label=""):
+        self.proc = Popen(command, shell=True,
+                          stdin=PIPE, stdout=PIPE, stderr=PIPE)
+        self.inp = self.proc.stdin
+        self.out_queue = output_queuer(self.proc.stdout)
+        self.err_queue = output_queuer(self.proc.stderr)
+        self.last_move = None
+        self.all_moves = set([])
+        self.label = label + ": " if label else ""
+        time.sleep(0.5)
+
+    def move(self, data):
+        print >>self.inp, data
+        self.inp.flush()
+        time.sleep(0.1)
+        if MOVE_PATN.match(data):
+            self.all_moves.add(data)
+            self.last_move = data
+
+    def next(self, timeout=DEFAULT_TIMEOUT):
+        try:
+            line = self.out_queue.get(True, timeout)
+            return line
+        except Empty:
+            return None
+            
+    def get_move(self, timeout=DEFAULT_TIMEOUT):
+        while True:
+            line = self.next(timeout)
+            if not line:
+                if self.proc.poll():
+                    if self.proc.returncode == 0:
+                        raise Move_Error(self.label + "program terminated")
+                    else:
+                        raise Move_Error(self.label +
+                                         "program terminated abnormally")
+                raise Move_Error(self.label + "program did not provide a move")
+            line = line.strip()
+            moves = INPUT_PATN.findall(line)
+            if not moves:
+                continue
+            if moves[0][0] == self.last_move:
+                    self.last_move = None
+                    del moves[0]
+            if not moves:
+                continue
+            if len(moves) > 1:
+                raise Move_Error(self.label + "more than one input on line: '"
+                                 + moves[0][0] + "'")
+            elif moves[0][2]:
+                raise Move_Error(self.label + "announces winner unexpectedly")
+            elif moves[0][5]:
+                raise Move_Error(self.label + "prints board unexpectedly")
+            self.last_move = moves[0][1]
+            self.all_moves.add(self.last_move)
+            return self.last_move
+    
+    def get_winner(self, timeout=DEFAULT_WINNER_TIMEOUT):
+        while True:
+            line = self.next(timeout)
+            if not line:
+                raise Move_Error(self.label
+                                 + "expected end-of-game announcement")
+            line = line.strip()
+            moves = INPUT_PATN.findall(line)
+            if not moves:
+                continue
+            if moves[0][0] == self.last_move:
+                    self.last_move = None
+                    del moves[0]
+            elif moves[0][1] in self.all_moves:
+                    del moves[0]
+            if not moves:
+                continue
+            if len(moves) > 1:
+                raise Move_Error(self.label + "more than one input on line: '"
+                                 + moves[0][0] + "'")
+            elif not moves[0][2]:
+                raise Move_Error(self.label + "expected end of game; got: '"
+                                 + moves[0][0] + "'")
+            return moves[0][0]
+
+    def get_board(self, timeout=DEFAULT_BOARD_TIMEOUT):
+        board = []
+        delim = self.next(timeout)
+        if not delim or delim.rstrip() != "===":
+            raise Move_Error(self.label + "ill-formed board output")
+            return
+        for i in xrange(14):
+            row = self.next(timeout)
+            if not row:
+                raise Move_Error(self.label + "input ends prematurely")
+            row = row.strip()
+            board.append(row)
+        delim = self.next(timeout)
+        if not delim or delim.rstrip() != "===":
+            raise Move_Error(self.label + "ill-formed board output")
+            return
+        board.reverse()
+        return board
+
+    def get_err(self, timeout=DEFAULT_MOVE_TIMEOUT):
+        result = []
+        while True:
+            try:
+                line = self.err_queue.get(True, timeout)
+                if line:
+                    result.append(line)
+                else:
+                    return result
+            except Empty:
+                return result
+    
+    def close(self):
+        self.inp.close()
+
+    def finish(self):
+        proc = self.proc
+        if proc is None:
+            return
+        self.proc = None
+        time.sleep(0.5)
+        if proc.poll() is None:
+            os.kill(proc.pid, signal.SIGKILL)
+            proc.wait()
+            raise Move_Error(self.label + "program failed to terminate")
+        if proc.returncode != 0:
+            raise Move_Error(self.label + "program failed to terminate normally")
+
+        while True:
+            line = self.next()
+            if not line:
+                break
+            if re.search(MOVE_PATN_STR + "|==="):
+                raise Move_Error(self.label + "unexpected trailing input: '"
+                                 + line.strip() + "'")
+        if self.get_err():
+            raise Move_Error(self.label + "unexpected trailing error: '"
+                             + line.strip() + "'")
+    def shutdown(self):
+        try:
+            self.finish()
+        except:
+            pass
+
+class Checker(object):
+    def __init__(self):
+        self.B = [ [None] * 14 for i in xrange(14) ]
+        self.players = ( ['O', False, set([])], ['V', False, set([])] )
+        self.turn = 0
+        self.num_moves = 0
+
+    def parse_move(self, move):
+        return PIECES[move[0] + move[-1]], int(move[1], 16), int(move[2], 16)
+
+    def get_turn(self):
+        return self.turn
+
+    def score(self):
+        s1 = s2 = 0
+        for i in xrange(14):
+            for j in xrange(14):
+                if self.B[i][j] == 'O':
+                    s1 += 1
+                elif self.B[i][j] == 'V':
+                    s2 += 1
+            if s1 == 89 and self.players[0][1]:
+                s1 += 5
+            elif s2 == 89 and self.players[1][1]:
+                s2 += 5
+        if s1 > s2:
+            winner = "Orange wins"
+        elif s1 < s2:
+            winner = "Violet wins"
+        else:
+            winner = "Tie game"
+        return s1, s2, winner
+
+    def win_message(self):
+        orange, violet, winner = self.score()
+        return "%s (%d-%d)" % (winner, orange, violet)        
+
+    def _place_piece(self, move):
+        piece, col, row = self.parse_move(move)
+        for dc, dr in piece:
+            self.B[col+dc][row+dr] = self.players[self.turn][0][0]
+
+    def covers_corner(self, piece, col, row):
+        for dc, dr in piece:
+            if (dc + col == 0 or dc + col == 13) \
+               and (dr + row == 0 or dr + row == 13):
+                return True
+        return False
+
+    def collides(self, piece, col, row):
+        for dc, dr in piece:
+            if self.B[col+dc][row+dr] is not None:
+                return True
+        return False
+
+    def fits(self, piece, col, row):
+        for dc, dr in piece:
+            if col+dc >= 14 or row+dr >= 14:
+                return False
+        return True
+
+    def touches_corner(self, piece, col, row, who):
+        for dc, dr in piece:
+            for h in -1, 1:
+                for v in -1, 1:
+                    if 0 <= col+dc+h < 14 and 0 <= row+dr+v < 14 and \
+                           self.B[col+dc+h][row+dr+v] == who[0]:
+                        return True
+        return False
+
+    def touches_edge(self, piece, col, row, who):
+        for dc, dr in piece:
+            for h, v in (-1, 0), (1, 0), (0, -1), (0, 1):
+                if 0 <= col+dc+h < 14 and 0 <= row+dr+v < 14 and \
+                       self.B[col+dc+h][row+dr+v] == who[0]:
+                    return True
+        return False
+
+    def _check_place(self, move):
+        if not MOVE_PATN.match(move):
+            return "Bad move syntax: "
+        piece, col, row = self.parse_move(move)
+        if not self.fits(piece, col, row):
+            return "Piece off board: "
+        if move[0] in self.players[self.turn][2]:
+            return "Piece used twice: "
+        if self.collides(piece, col, row):
+            return "Move overlaps piece: "
+        if self.num_moves < 2 and not self.covers_corner(piece, col, row):
+            return "Initial move must cover corner: "
+        if self.num_moves >= 2:
+            if self.touches_edge(piece, col, row, self.players[self.turn][0]):
+                return "Pieces of the same color must not touch along edge: "
+            if not self.touches_corner(piece, col, row, self.players[self.turn][0]):
+                return "Piece must touch one of the same color: "
+        return None
+
+    def at_end(self):
+        if self.num_moves < 2:
+            return False
+        for piece_key in CANONICAL_PIECES:
+            if piece_key[0] in self.players[self.turn][2]:
+                continue
+            for col in "0123456789abcd":
+                for row in "0123456789abcd":
+                    move = piece_key[0] + col + row + piece_key[1]
+                    if self._check_place(move) is None:
+                        return False
+        return True
+
+    def legal_moves(self):
+        result = []
+        for piece_key in CANONICAL_PIECES:
+            if piece_key[0] in self.players[self.turn][2]:
+                continue
+            for col in "0123456789abcd":
+                for row in "0123456789abcd":
+                    move = piece_key[0] + col + row + piece_key[1]
+                    if self._check_place(move) is None:
+                        result.append(move)
+        return result
+
+    def select_move(self):
+        moves = self.legal_moves()
+        if moves:
+            return random.choice(moves)
+        else:
+            return None
+
+    def make_move(self, move, errLabel = ''):
+        msg = self._check_place(move)
+        player = self.players[self.turn]
+        if msg:
+            raise Move_Error(errLabel + msg + move)
+        self._place_piece(move)
+        player[1] = (move[0] == '1')
+        player[2].add(move[0])
+        self.num_moves += 1
+        self.turn = 1 - self.turn
+        return True
+
+    def gen_moves(self):
+        result = []
+        for piece in "WZILUTXVFPYNitdzs3v21":
+            if piece in self.players[self.turn][2]:
+                continue
+            for col in "0123456789abcd":
+                for row in "0123456789abcd":
+                    for orientation in "01234567":
+                        if self._check_place(piece + col + row + orientation):
+                            return False
+
+    def check_board(self, board, errLabel = ''):
+        for row in xrange(14):
+            for col in xrange(14):
+                p = board[row][col]
+                if p != (self.B[col][row] or '-'):
+                    raise Move_Error(errLabel + "board is incorrect")
+
+    def printable_board(self, indent):
+        s = ''
+        for row in xrange(13,-1,-1):
+            s += ' ' * indent
+            for col in xrange(14):
+                s += self.B[col][row] or '-'
+            s += '\n'
+        return s
+
+def parse_spec(file):
+    """Read FILE and return the specified test as a tuple:
+       (SRC1, SRC2, INITIAL_LINES, INPUT_LINES, TEST_SEED, CHECK_SEED)
+with TEST_SEED converted to the appropriate string argument ("" or
+a numeral)."""
+    inp = Open(file)
+    if inp is None:
+        raise Spec_Error("test file does not exist")
+    text = inp.read()
+    inp.close()
+    text = re.sub(r'(?m)^\s*(#.*)\n','',text)
+    spec = re.match(r'(?s)\s*(ai|stdin|rand)\s+(ai|stdin|rand)\s+'
+                    r'(-|\d+)\s+(\d+)\s*'
+                    r'(.*?)\s+-----\s*(.*)', text)
+    if spec is None:
+        raise Spec_Error("faulty first line in test file")
+
+    src1, src2, test_seed, check_seed, init, moves = spec.groups()
+
+    check_seed = int(check_seed)
+    test_seed = 0 if test_seed == "-" else int(test_seed)
+
+    return src1, src2, init, moves, test_seed, check_seed
+
+def read_init_file(checker, init_file):
+    if init_file:
+        init = open(init_file)
+        for move in init:
+            move = move.strip()
+            try:
+                checker.make_move(move)
+            except Move_Error:
+                init.close()
+                raise Spec_Error("Bad move in init file: " + move)
+        init.close()
+
+def start_test_user(orange_moves, violet_moves, seed, init_lines, command):
+    if orange_moves == 'ai':
+        player1 = "@orange"
+    else:
+        player1 = "orange"
+    if violet_moves == 'ai':
+        player2 = "@violet"
+    else:
+        player2 = "violet"
+
+    if init_lines:
+        init = open(INIT_FILE, "w")
+        print >>init, init_lines
+        init_arg = INIT_FILE
+    else:
+        init_arg = ""
+        
+    return Player('%s %s %s %s %s' % (command, player1, player2, seed, init_arg))
+
+def run_test(command, file, move_timeout):
+    spec = parse_spec(file)
+    orange, violet, init_lines, std_input, user_seed, staff_seed = spec
+
+    srcs = (orange, violet)
+
+    user = start_test_user(orange, violet, user_seed, init_lines, command)
+    checker = Checker()
+    if staff_seed != 0:
+        random.seed(staff_seed)
+
+    try:
+        for move in re.split(r'\s*\n\s*', init_lines.strip()):
+            if move:
+                try:
+                    checker.make_move(move)
+                except Move_Error, m:
+                    raise Spec_Error, "bad initial move: " + move
+
+        test_input = re.split(r'\s*\n\s*',
+                              re.sub(r'(?m)\s*#.*\n', '', std_input.strip()))
+
+        while True:
+            if checker.at_end():
+                announce = user.get_winner().strip()
+                if announce != checker.win_message():
+                    raise Move_Error("wrong winner announced: '" + announce + "'")
+                break
+            src = srcs[checker.get_turn()]
+            if src == 'ai':
+                move = user.get_move(timeout=move_timeout)
+                checker.make_move(move)
+                if verbose:
+                    print >>sys.stderr, "Move", move
+            elif src == 'rand':
+                move = checker.select_move()
+                if move is None:
+                    break
+                checker.make_move(move)
+                user.move(move)
+                if verbose:
+                    print >>sys.stderr, "Move", move
+            else:
+                if not test_input:
+                    user.close()
+                    break
+                elif not test_input[0]:
+                    del test_input[0]
+                    continue
+                if verbose:
+                    print >>sys.stderr, "Move", test_input[0]
+                if re.match(r'b', test_input[0]):
+                    user.move(test_input[0])
+                    board = user.get_board()
+                    checker.check_board(board)
+                elif re.match(r'q', test_input[0]):
+                    user.move(test_input[0])
+                    break
+                else:
+                    try:
+                        checker.make_move(test_input[0])
+                        intentional_err = False
+                    except Move_Error, e:
+                        if verbose:
+                            print >>sys.stderr, "Expecting error"
+                        intentional_err = True
+                        errs = user.get_err()
+                        if errs:
+                            raise Move_Error("unexpected error messages from "
+                                             "tested program")
+                        user.move(test_input[0])
+                        errs = user.get_err()
+                        if not errs:
+                            raise Move_Error("did not get error in response to "
+                                             "invalid input: '"
+                                             + test_input[0] + "'")
+                    if not intentional_err:
+                        user.move(test_input[0])
+                del test_input[0]
+        user.finish()
+    except IOError:
+        try:
+            announce = user.get_winner(timeout=1)
+        except:
+            raise
+        raise Move_Error(user.label + "premature announcement of winner: '"
+                         + announce + "'")
+    finally:
+        user.shutdown()
+
+def test_program(command, move_timeout):
+    fail = spec_errs = 0
+    for test in args:
+        name = os.path.splitext(os.path.basename(test))[0]
+        try:
+            run_test(command1, test, move_timeout)
+            msg = "OK"
+        except Spec_Error, e:
+            msg = "ERROR (%s)" % e.args[0]
+            spec_errs += 1
+        except Move_Error, e:
+            msg = "FAIL (%s)" % e.args[0]
+            fail += 1
+        print "%s: %s" % (name, msg)
+
+    if fail == 0:
+        print "Passed all %d tests." % (len(args) - spec_errs,)
+    else:
+        print "Failed %d out of %d tests" \
+              % (fail, len(args) - spec_errs)
+    if spec_errs:
+        print "%d tests had missing or erroneous specification files." \
+              % (spec_errs,)
+
+    os.unlink(INIT_FILE)
+    sys.exit(fail)
+
+def play_game(player1, player2, command1, command2, seed1, seed2,
+              init_file, move_timeout):
+    def check_winner(player):
+        announce = player.get_winner().strip()
+        if announce != checker.win_message():
+            raise Move_Error(player.label + " announces wrong winner: "
+                             + announce)
+
+    init_file = init_file or ""
+    p1 = Player('%s @%s %s %s %s'
+                % (command1, player1, player2, seed1, init_file),
+                label = player1)
+    p2 = Player('%s %s @%s %s %s'
+                % (command2, player1, player2, seed2, init_file),
+                label = player2)
+    players = p1, p2
+    checker = Checker()
+    read_init_file(checker, init_file)
+
+    try:
+        while True:
+            if checker.at_end():
+                check_winner(p1)
+                check_winner(p2)
+                print checker.win_message()
+                break
+            player, opponent = players[checker.get_turn()], \
+                               players[1-checker.get_turn()]
+            move = player.get_move(timeout=move_timeout)
+            checker.make_move(move)
+            opponent.move(move)
+            if verbose:
+                print checker.printable_board(0)
+        else:
+            raise Move_Error, "game not properly ended"
+        players[0].finish()
+        players[1].finish()
+    except Move_Error, e:
+        players[0].shutdown()
+        players[1].shutdown()
+        raise
+
+def provide_moves(player1, player2, seed, init_file):
+    checker = Checker()
+    read_init_file(checker, init_file)
+    players = player1, player2
+    if seed != 0:
+        random.seed(seed)
+    
+    while not checker.at_end():
+        if re.match(r'@', players[checker.get_turn()]):
+            move = checker.select_move()
+            checker.make_move(move)
+            print move
+            sys.stdout.flush()
+        else:
+            move = sys.stdin.readline().strip()
+            checker.make_move(move)
+    print checker.win_message()
+    sys.stdout.flush()
+
+try:
+    opts, args = getopt(sys.argv[1:], '',
+                        ['command=', 'command1=', 'command2=',
+                         'seed=', 'seed1=', 'seed2=', 'init-moves=',
+                         'referee', 'play', 'verbose',
+                         'player1=', 'player2=', 'movetime='])
+except:
+    Usage()
+
+command1 = command2 = None
+player1 = player2 = None
+seed1 = seed2 = 0
+init_moves = None
+referee = play = False
+move_timeout = DEFAULT_MOVE_TIMEOUT
+verbose = False
+for opt, val in opts:
+    if opt == '--command':
+        command1 = command2 = val
+    elif opt == '--command1':
+        command1 = val
+    elif opt == '--command2':
+        command2 = val
+    elif opt == '--player1':
+        player1 = val
+    elif opt == '--player2':
+        player2 = val
+    elif opt == '--seed1':
+        seed1 = val
+    elif opt == '--seed2':
+        seed2 = val
+    elif opt == '--seed':
+        seed1 = seed2 = val
+    elif opt == '--init-moves':
+        init_moves = val
+    elif opt == '--referee':
+        referee = True
+    elif opt == '--play':
+        play = True
+    elif opt == '--verbose':
+        verbose = True
+    elif opt == '--movetime':
+        try:
+            move_timeout = float(val)
+        except:
+            Usage()
+
+try:
+    seed1 = int(seed1)
+    seed2 = int(seed2)
+except ValueError:
+    print >>sys.stderr, "ERROR. Invalid seed value."
+    sys.exit(1)
+
+if not args or (referee and len(args) != 2):
+    Usage()
+
+tmp, INIT_FILE = mkstemp()
+os.close(tmp)
+
+if referee:
+    if not (player1 or player2):
+        player1 = "Orange"
+        player2 = "Violet"
+    if player1 and not player2:
+        player2 = player1 + "2"
+        player1 = player1 + "1"
+    elif player2 and not player1:
+        player1 = player2 + "2"
+        player2 = player2 + "1"
+
+    if not command1:
+        command1 = "java -ea -cp %s:$CLASSPATH duo.Main" % (args[0],)
+    elif re.search(r'%', command1):
+        command1 = command1 % (args[0],)
+
+    if not command2:
+        command2 = "java -ea -cp %s:$CLASSPATH duo.Main" % (args[1],)
+    elif re.search(r'%', command2):
+        command2 = command2 % (args[1],)
+
+    try:
+        play_game(player1, player2, command1, command2, seed1, seed2,
+                  init_moves, move_timeout)
+    except Move_Error, e:
+        print >>sys.stderr, "ERROR.", e.args[0]
+        sys.exit(1)
+elif play:
+    provide_moves(args[0], args[1], seed1, init_moves)
+else:
+    if not command1:
+        command1 = 'java -ea duo.Main'
+    test_program(command1, move_timeout)
